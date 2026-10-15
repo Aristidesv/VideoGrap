@@ -737,11 +737,11 @@ app.get("/api/downloads/:id/file", requireAuth, async (req, res, next) => {
       file_path: string;
       video_title: string;
     }>(
-      `UPDATE download_jobs
-       SET file_path = NULL, file_expires_at = NULL
+      `SELECT file_path, video_title
+       FROM download_jobs
        WHERE id = $1 AND user_id = $2 AND status = 'done'
          AND file_path IS NOT NULL AND file_expires_at > now()
-       RETURNING file_path, video_title`,
+       `,
       [req.params.id, req.user!.id],
     );
     const job = result.rows[0];
@@ -760,10 +760,20 @@ app.get("/api/downloads/:id/file", requireAuth, async (req, res, next) => {
     const safeName = job.video_title.replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_").slice(0, 120);
     res.setHeader("Cache-Control", "no-store");
     res.download(filePath, `${safeName}${path.extname(filePath)}`, (error) => {
-      void fs.rm(filePath, { force: true }).catch((cleanupError: unknown) => {
-        console.error(`Could not remove delivered download ${req.params.id}:`, cleanupError);
+      if (error) {
+        console.error(`Could not deliver download ${req.params.id}:`, error);
+        if (!res.headersSent) next(error);
+        return;
+      }
+
+      void database.query(
+        `UPDATE download_jobs
+         SET file_path = NULL, file_expires_at = NULL
+         WHERE id = $1 AND user_id = $2 AND file_path = $3`,
+        [req.params.id, req.user!.id, job.file_path],
+      ).then(() => fs.rm(filePath, { force: true })).catch((cleanupError: unknown) => {
+        console.error(`Could not finalize delivered download ${req.params.id}:`, cleanupError);
       });
-      if (error && !res.headersSent) next(error);
     });
   } catch (error) {
     next(error);

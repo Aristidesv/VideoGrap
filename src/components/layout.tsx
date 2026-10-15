@@ -35,9 +35,15 @@ export function Layout({ children }: { children: React.ReactNode }) {
             ) : user ? (
               <>
                 <Link href="/history">
-                  <Button variant="ghost" size="sm" className="hidden sm:flex items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="flex items-center gap-2"
+                    aria-label="History"
+                    title="History"
+                  >
                     <History className="h-4 w-4" />
-                    History
+                    <span className="hidden sm:inline">History</span>
                   </Button>
                 </Link>
                 {user.role === 'admin' && (

@@ -5,9 +5,7 @@ import { PRIVACY_VERSION, TERMS_VERSION } from "@/lib/legal";
 function LegalDraftNotice() {
   return (
     <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-4 text-sm text-amber-100">
-      Minuta para revisão. Antes de disponibilizar publicamente em Moçambique,
-      complete a identificação e o contacto do responsável pelo serviço e peça
-      revisão jurídica da versão final.
+      Minuta para revisão.   
     </div>
   );
 }

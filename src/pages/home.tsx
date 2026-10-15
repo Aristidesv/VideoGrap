@@ -26,7 +26,6 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<"video" | "audio">("video");
   const [selectedFormatId, setSelectedFormatId] = useState<string>("");
   const [jobId, setJobId] = useState<string | null>(null);
-  const [downloadRequested, setDownloadRequested] = useState(false);
 
   const fetchInfo = useFetchVideoInfo();
   const createDownload = useCreateDownload();
@@ -35,8 +34,8 @@ export default function Home() {
     query: {
       enabled: !!jobId,
       refetchInterval: (query) => {
-        const status = query.state.data?.status;
-        if (status === 'done' || status === 'error') return false;
+        const job = query.state.data;
+        if (job?.status === 'error' || (job?.status === 'done' && !job.fileAvailable)) return false;
         return 2000;
       },
       queryKey: getGetDownloadStatusQueryKey(jobId || "")
@@ -51,7 +50,6 @@ export default function Home() {
   const onSubmitUrl = (data: z.infer<typeof urlSchema>) => {
     setVideoInfo(null);
     setJobId(null);
-    setDownloadRequested(false);
     fetchInfo.mutate({ data: { url: data.url } }, {
       onSuccess: (info) => {
         setVideoInfo(info);
@@ -92,7 +90,6 @@ export default function Home() {
     }, {
       onSuccess: (job) => {
         setJobId(job.id);
-        setDownloadRequested(false);
       },
       onError: (err) => {
         toast({
@@ -241,11 +238,11 @@ export default function Home() {
                 </div>
                 <div className="space-y-2">
                   <h3 className="text-2xl font-bold text-green-500">
-                    {jobStatus.fileAvailable && !downloadRequested ? "Ready to save!" : "Conversion complete"}
+                    {jobStatus.fileAvailable ? "Ready to save!" : "Conversion complete"}
                   </h3>
                   <p className="text-muted-foreground">{jobStatus.videoTitle}</p>
                 </div>
-                {jobStatus.fileAvailable && !downloadRequested ? (
+                {jobStatus.fileAvailable ? (
                   <>
                     <p className="text-sm text-muted-foreground">
                       The temporary file is removed from the server after download or after one hour.
@@ -254,13 +251,7 @@ export default function Home() {
                       size="lg"
                       className="w-full max-w-xs text-lg h-14 bg-green-600 hover:bg-green-700 text-white"
                       onClick={() => {
-                        setDownloadRequested(true);
                         window.location.href = getDownloadFileUrl(jobStatus.id);
-                        window.setTimeout(() => {
-                          void queryClient.invalidateQueries({
-                            queryKey: getGetDownloadStatusQueryKey(jobStatus.id),
-                          });
-                        }, 1500);
                       }}
                     >
                       Save to device <Download className="ml-2 h-5 w-5" />
