@@ -41,37 +41,50 @@ para `/api` para a API, que usa `API_PORT` (3101 por predefinição).
 ## Email, recuperação de palavra-passe e verificação
 
 Configure `SMTP_URL` ou, em alternativa, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`,
-`SMTP_PASSWORD`, `SMTP_SECURE` e `EMAIL_FROM` em `.env`. Defina `PUBLIC_APP_URL`
-com o URL público do frontend; este valor é usado para criar os links de
-verificação e de reposição de palavra-passe. Apenas no desenvolvimento local,
-quando o SMTP não está configurado, os links são escritos no terminal da API
-para testes. Configure o SMTP antes de disponibilizar a aplicação
-publicamente.
+`SMTP_PASSWORD`, `SMTP_SECURE` e `EMAIL_FROM` em `.env`. Para usar a API HTTPS
+do Brevo, configure `EMAIL_PROVIDER=brevo`, `BREVO_API_KEY` e `EMAIL_FROM`.
+Defina `PUBLIC_APP_URL` com o URL público do frontend; este valor é usado para
+criar os links de verificação e de reposição de palavra-passe. Apenas no
+desenvolvimento local, quando não há SMTP nem API de email configurados, os
+links são escritos no terminal da API para testes. Configure um método de
+envio antes de disponibilizar a aplicação publicamente.
 
-### Exemplo: SMTP do Resend
+### Exemplo: SMTP do Gmail
 
-1. Crie uma conta Resend, adicione um domínio que controla e conclua a
-   verificação desse domínio (incluindo os registos DNS fornecidos pelo Resend).
-2. Crie uma chave de API do Resend com permissão para enviar emails.
-3. Configure as seguintes variáveis de ambiente localmente ou nas definições do
-   serviço que aloja a API:
+Este método pode servir para começar ou para uma aplicação de baixo volume. O
+Gmail pode impor limites de envio e filtros anti-spam; para envio regular a
+muitos utilizadores, use um serviço de email transacional e siga os requisitos
+de autenticação do remetente desse serviço. **Importante para o Render:** os
+serviços Free bloqueiam ligações de saída nas portas SMTP 25, 465 e 587. Assim,
+o Gmail SMTP não funciona num Web Service Free do Render, mesmo com as
+credenciais corretas. Para o plano Free, use a API HTTPS do Brevo descrita
+abaixo.
+
+1. Na Conta Google que enviará as mensagens, ative a **Verificação em dois
+   passos**. Abra **Segurança** e crie uma **Palavra-passe de app** para a
+   aplicação. Esta opção pode não estar disponível em todas as contas Google.
+   Use a palavra-passe de app, não a palavra-passe normal da conta.
+2. Nas variáveis de ambiente do backend, configure:
 
    ```text
-   SMTP_HOST=smtp.resend.com
-   SMTP_PORT=465
-   SMTP_SECURE=true
-   SMTP_USER=resend
-   SMTP_PASSWORD=<a sua chave de API do Resend>
-   EMAIL_FROM=VidGrab <no-reply@o-seu-dominio-verificado.example>
-   PUBLIC_APP_URL=https://a-sua-aplicacao-publica.example
+   SMTP_HOST=smtp.gmail.com
+   SMTP_PORT=587
+   SMTP_SECURE=false
+   SMTP_USER=<endereco-gmail>
+   SMTP_PASSWORD=<palavra-passe-de-app>
+   EMAIL_FROM=VidGrab <endereco-gmail>
+   PUBLIC_APP_URL=https://<endereco-publico-da-aplicacao>
    ```
-   Substitua o domínio do remetente pelo domínio verificado. Mantenha a chave
-   de API privada; nunca a coloque no código do frontend, numa variável
-   `VITE_*` ou num ficheiro `.env` versionado. Em alternativa, o Resend também
-   suporta a porta `587` com `SMTP_SECURE=false`.
-4. Reinicie ou volte a publicar a API depois de alterar as variáveis. Em
-   seguida, teste o registo com um endereço de email seu e consulte os registos
-   da API e o painel do Resend.
+
+   Substitua os valores entre `<...>` e use o mesmo endereço Gmail em
+   `SMTP_USER` e em `EMAIL_FROM`. Em `PUBLIC_APP_URL`, use o endereço público
+   do frontend, não `localhost`. Mantenha a palavra-passe de app privada:
+   nunca a coloque no código, numa variável `VITE_*`, num ficheiro versionado
+   ou numa mensagem. Se deixar de a usar, remova-a nas definições da Conta
+   Google.
+3. Guarde as variáveis e reinicie ou volte a publicar a aplicação. Teste com
+   um endereço seu e verifique também as pastas de spam e os registos do
+   servidor.
 
 As variáveis da API devem ser configuradas no serviço que aloja o backend e
 aplicadas numa nova publicação. `PUBLIC_APP_URL` deve apontar para o endereço
@@ -86,44 +99,95 @@ mantidos na memória da aplicação e destinam-se a um único processo de API; u
 um armazenamento partilhado de limites de pedidos se executar várias instâncias
 de produção.
 
-### Publicar no Render com Supabase
+### Publicar no Render com Supabase e Gmail SMTP
 
-1. Crie um projeto Supabase. Em **Connect**, escolha uma cadeia de ligação
-   PostgreSQL adequada a um servidor de aplicação persistente. Se o seu
-   fornecedor de alojamento não conseguir aceder à ligação direta, use os
-   dados do **Session pooler** fornecidos pelo Supabase. Copie a cadeia de
-   ligação completa, incluindo o nome de utilizador e a palavra-passe da base
-   de dados.
-2. Envie este projeto para um repositório GitHub e crie um **Web Service** no
-   Render usando esse repositório e selecionando **Docker** como ambiente de
-   execução. O Render compilará o `Dockerfile` incluído, que instala Node.js,
-   `yt-dlp` e FFmpeg e compila o frontend e a API.
-3. Adicione estas variáveis de ambiente nas definições do serviço Render:
+Os passos seguintes publicam o frontend e a API juntos num **Web Service**
+Docker do Render e usam o Supabase como PostgreSQL. Para email, o exemplo
+configura o Gmail SMTP, que requer um plano Render que permita ligações SMTP.
+Para usar o Render Free, siga a alternativa Brevo API HTTPS no passo 4.
+
+1. **Crie a base de dados no Supabase.** Crie um projeto e guarde a palavra-
+   passe da base de dados. No painel do projeto, abra **Connect** e copie a
+   cadeia de ligação PostgreSQL para a aplicação. Prefira a ligação indicada
+   para servidores persistentes; se a ligação direta não funcionar no Render,
+   use o **Session pooler**. Copie a cadeia completa com utilizador, palavra-
+   passe, host, porta e base de dados. Não use as chaves `anon` ou
+   `service_role` como `DATABASE_URL`.
+2. **Envie o código para GitHub.** Coloque o projeto num repositório privado
+   ou público. Nunca inclua `.env`, palavras-passe, chaves SMTP ou outras
+   credenciais no repositório.
+3. **Crie o serviço no Render.** No Render, escolha **New → Web Service**,
+   ligue o repositório GitHub e selecione **Docker** como ambiente. Mantenha o
+   `Dockerfile` na raiz do projeto. Escolha uma região próxima da base de dados
+   do Supabase e crie o serviço. O Dockerfile instala Node.js, `yt-dlp` e
+   FFmpeg e compila a aplicação. Se for usar Gmail SMTP, não escolha o plano
+   Free: o Render bloqueia nesse plano a saída para as portas 25, 465 e 587.
+   Consulte as [limitações dos serviços Free do Render](https://render.com/docs/free).
+4. **Configure as variáveis de ambiente.** No serviço Render, abra
+   **Environment**. Para Gmail SMTP num plano que permita SMTP, adicione:
 
    ```text
-   DATABASE_URL=<cadeia de ligação PostgreSQL do Supabase>
+   DATABASE_URL=<cadeia-completa-de-ligacao-do-Supabase>
    DATABASE_SSL=true
-   PUBLIC_APP_URL=https://<dominio-do-seu-servico-render>
    DOWNLOAD_DIR=/tmp/vidgrab-downloads
-   SMTP_HOST=smtp.resend.com
-   SMTP_PORT=465
-   SMTP_SECURE=true
-   SMTP_USER=resend
-   SMTP_PASSWORD=<a sua chave de API do Resend>
-   EMAIL_FROM=VidGrab <no-reply@o-seu-dominio-verificado.example>
+   SMTP_HOST=smtp.gmail.com
+   SMTP_PORT=587
+   SMTP_SECURE=false
+   SMTP_USER=<endereco-gmail>
+   SMTP_PASSWORD=<palavra-passe-de-app-do-Google>
+   EMAIL_FROM=VidGrab <endereco-gmail>
+   PUBLIC_APP_URL=https://<nome-do-servico>.onrender.com
    ```
 
-   Substitua o URL e o remetente pelos domínios reais. Adicione `ADMIN_EMAIL`,
-   `ADMIN_PASSWORD` (com pelo menos 12 caracteres) e, opcionalmente,
-   `ADMIN_NAME` se quiser criar um administrador durante o arranque. Nunca
-   defina segredos como variáveis frontend `VITE_*` nem os envie para o GitHub.
-   O Render fornece `PORT`; o servidor começa automaticamente a escutar nessa
-   porta. `DOWNLOAD_DIR` aponta para armazenamento temporário; não configure um
-   disco persistente para os ficheiros convertidos.
-4. Publique a aplicação e verifique
-   `https://<dominio-do-seu-servico-render>/api/health`. Uma resposta saudável
-   deve indicar que a ligação ao PostgreSQL está ativa. Depois, teste o registo,
-   o envio de emails, a análise de vídeos e uma transferência pequena.
+   Substitua cada valor entre `<...>`. Use o endereço Gmail da conta onde criou
+   a palavra-passe de app, tanto em `SMTP_USER` como em `EMAIL_FROM`.
+
+   **Alternativa para Render Free: Brevo API HTTPS.** Crie uma chave de API no
+   painel Brevo e configure/verifique um remetente autorizado pelo Brevo. Em
+   seguida, use estas variáveis em vez das variáveis `SMTP_*`:
+
+   ```text
+   EMAIL_PROVIDER=brevo
+   BREVO_API_KEY=<chave-de-api-do-Brevo>
+   EMAIL_FROM=VidGrab <remetente-verificado-no-Brevo>
+   PUBLIC_APP_URL=https://<nome-do-servico>.onrender.com
+   ```
+
+   A aplicação envia as mensagens para a API transacional do Brevo por HTTPS.
+   A chave de API é um segredo: guarde-a apenas nas variáveis do serviço Render
+   (nunca no frontend, em `VITE_*`, no repositório ou numa mensagem). Se a
+   conta Brevo tiver restrições de IP para chaves API, autorize os endereços de
+   saída do serviço Render ou ajuste essa restrição nas definições da chave;
+   os endereços de saída podem variar por região/serviço. O remetente tem de
+   ser aceite pelo Brevo, e a autenticação do domínio melhora a entrega.
+
+   Em ambos os métodos, o Render atribui o endereço `.onrender.com` ao
+   serviço; copie o endereço real para `PUBLIC_APP_URL`. Este endereço é usado
+   nos links de verificação e de reposição de palavra-passe. Não adicione
+   segredos como variáveis `VITE_*` nem os coloque no GitHub. O Render fornece
+   `PORT`; não é necessário defini-la.
+5. **Crie um administrador (opcional).** Se quiser criar a conta inicial de
+   administrador no arranque, adicione também `ADMIN_EMAIL` e
+   `ADMIN_PASSWORD` (mínimo de 12 caracteres) e, opcionalmente, `ADMIN_NAME`.
+   Depois de a conta ser criada, remova `ADMIN_EMAIL` e `ADMIN_PASSWORD` das
+   variáveis do Render; se já existir uma conta com esse email, o arranque
+   volta a promovê-la a administradora.
+6. **Publique e verifique a aplicação.** Guarde as variáveis e inicie ou
+   volte a publicar o serviço. Abra
+   `https://<nome-do-servico>.onrender.com/api/health`; uma resposta saudável
+   confirma que a API consegue aceder à base de dados. O servidor cria o
+   esquema e aplica as migrações automaticamente no primeiro arranque.
+7. **Teste o email e as funcionalidades.** Registe uma conta com um endereço
+   seu, abra o link recebido para verificar o email e teste a reposição de
+   palavra-passe. Os links expiram após uma hora e só podem ser usados uma vez.
+   Verifique também a pasta de spam e os registos do serviço no Render se a
+   mensagem não chegar.
+
+O SMTP do Gmail é uma solução simples para começar, mas pode ter limites de
+envio e não é recomendado para campanhas ou volume elevado. A entrega pode
+depender das políticas de segurança da Google. No Render Free use a integração
+Brevo API; para uso público regular, considere autenticar um domínio próprio no
+serviço de envio para melhorar a entrega.
 
 A aplicação aplica as migrações do PostgreSQL no esquema `vidgrab` durante o
 arranque. Use um projeto/base de dados Supabase dedicado a esta aplicação. As
