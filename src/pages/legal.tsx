@@ -141,8 +141,8 @@ export function PrivacyPolicy() {
           <section className="space-y-2">
             <h2 className="text-lg font-bold text-foreground">4. Emails e fornecedores</h2>
             <p>
-              Um fornecedor SMTP configurado recebe o email necessário para
-              entregar links de verificação e recuperação. O yt-dlp consulta a
+              O Mailgun recebe o email necessário para entregar links de
+              verificação e recuperação. O yt-dlp consulta a
               plataforma de origem para obter as informações do vídeo solicitado.
               A infraestrutura de alojamento e base de dados processa os dados
               necessários para manter a aplicação. Consulte também as políticas
