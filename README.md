@@ -1,5 +1,4 @@
 # VidGrab
-
 ## Requisitos
 
 - Node.js 20 ou mais recente
@@ -35,18 +34,6 @@ conta com esse endereço de email, a aplicação promove-a a administradora.
 Mantenha estas credenciais privadas e remova as definições iniciais depois de
 a conta de administrador ser criada.
 
-## Executar localmente
-
-Instale as ferramentas externas de vídeo, instale as dependências JavaScript e
-inicie a API e o frontend:
-
-```powershell
-winget install yt-dlp.yt-dlp
-winget install Gyan.FFmpeg.Shared
-npm install
-npm run dev
-```
-
 Se `yt-dlp` ou FFmpeg estiver instalado fora do `PATH`, configure `YT_DLP_PATH`
 ou `FFMPEG_LOCATION` em `.env`. O frontend usa `PORT` e encaminha os pedidos
 para `/api` para a API, que usa `API_PORT` (3101 por predefinição).
@@ -78,7 +65,6 @@ publicamente.
    EMAIL_FROM=VidGrab <no-reply@o-seu-dominio-verificado.example>
    PUBLIC_APP_URL=https://a-sua-aplicacao-publica.example
    ```
-
    Substitua o domínio do remetente pelo domínio verificado. Mantenha a chave
    de API privada; nunca a coloque no código do frontend, numa variável
    `VITE_*` ou num ficheiro `.env` versionado. Em alternativa, o Resend também
@@ -99,23 +85,6 @@ email, análise de vídeos e criação de transferências. Estes limites são
 mantidos na memória da aplicação e destinam-se a um único processo de API; use
 um armazenamento partilhado de limites de pedidos se executar várias instâncias
 de produção.
-
-## Publicação: Vercel ou Render com Supabase
-
-**É possível publicar o frontend no Vercel, mas não é recomendável publicar a
-aplicação completa no Vercel tal como está.** O frontend é uma aplicação React
-que pode ser compilada como ficheiros estáticos. No entanto, O backend atual é
-um servidor Express que inicia tarefas de `yt-dlp` e FFmpeg, mantém o estado
-das tarefas na memória e cria ficheiros temporários para as transferências.
-As funções serverless do Vercel não são adequadas a este worker de longa duração.
-
-Para usar o Vercel, seria necessário alojar a API e o worker noutro serviço
-compatível, como o Render, e configurar o frontend para comunicar com essa API.
-Como frontend e API ficariam em domínios diferentes, também seria necessário
-configurar o URL da API, CORS e os cookies entre domínios. Para publicar a
-aplicação completa com o mínimo de alterações, a opção recomendada é alojar o
-frontend e a API juntos como um serviço Docker no Render e usar o Supabase para
-o PostgreSQL.
 
 ### Publicar no Render com Supabase
 
@@ -178,14 +147,6 @@ O worker e os contadores de limites de pedidos estão atualmente na memória do
 processo. Use uma única instância da aplicação nesta configuração inicial;
 várias instâncias exigiriam armazenamento partilhado para as tarefas e os
 limites de pedidos.
-
-## Páginas de conta e informação legal
-
-As novas contas têm de verificar o endereço de email e aceitar explicitamente
-os Termos de Utilização e a Política de Privacidade antes do registo. Essas
-páginas são versões iniciais para Moçambique; confirme os dados da entidade
-responsável, preencha todas as informações de contacto em falta e obtenha
-revisão jurídica local qualificada antes do lançamento público.
 
 Um utilizador autenticado pode eliminar a sua conta no perfil, confirmando a
 palavra-passe e escrevendo `ELIMINAR`. Esta ação elimina a conta, as sessões, o
