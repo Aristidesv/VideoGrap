@@ -63,3 +63,62 @@ export async function sendAccountLink(options: {
     throw new Error(`Mailgun email API returned ${response.status}: ${details || response.statusText}`);
   }
 }
+
+export async function sendPremiumPaymentNotification(options: {
+  userName: string;
+  userEmail: string;
+  paymentMethod: string;
+  transactionReference: string;
+  notes: string;
+}) {
+  const to = process.env.PREMIUM_NOTIFICATION_EMAIL?.trim() ||
+    process.env.ADMIN_EMAIL?.trim();
+  if (!to) {
+    throw new Error("ADMIN_EMAIL is required to notify the administrator of premium payment requests.");
+  }
+
+  if (!mailgunApiKey && !mailgunDomain && process.env.NODE_ENV !== "production") {
+    console.info(
+      `[development email] Premium payment request from ${options.userEmail} (${options.paymentMethod}, reference: ${options.transactionReference}) for ${to}`,
+    );
+    return false;
+  }
+
+  if (!mailgunApiKey || !mailgunDomain) {
+    throw new Error("MAILGUN_API_KEY and MAILGUN_DOMAIN are required to send premium payment notifications.");
+  }
+
+  const subject = "New VidGrab Premium payment request";
+  const text = [
+    "A user submitted a Premium payment request.",
+    `Name: ${options.userName}`,
+    `Email: ${options.userEmail}`,
+    `Payment method: ${options.paymentMethod}`,
+    "Amount: 100 MT",
+    `Transaction reference: ${options.transactionReference}`,
+    `Notes: ${options.notes || "(none)"}`,
+  ].join("\n");
+  const body = new URLSearchParams({
+    from: process.env.EMAIL_FROM || `VidGrab <no-reply@${mailgunDomain}>`,
+    to,
+    subject,
+    text,
+  });
+  const response = await fetch(
+    `${mailgunApiBaseUrl}/v3/${encodeURIComponent(mailgunDomain)}/messages`,
+    {
+      method: "POST",
+      headers: {
+        authorization: `Basic ${Buffer.from(`api:${mailgunApiKey}`).toString("base64")}`,
+        "content-type": "application/x-www-form-urlencoded",
+      },
+      body,
+      signal: AbortSignal.timeout(15_000),
+    },
+  );
+  if (!response.ok) {
+    const details = (await response.text()).slice(0, 500);
+    throw new Error(`Mailgun email API returned ${response.status}: ${details || response.statusText}`);
+  }
+  return true;
+}

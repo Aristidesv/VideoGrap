@@ -98,7 +98,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <div className="container mx-auto px-4">
           <p>&copy; {new Date().getFullYear()} VidGrab. Built for speed.</p>
           <nav aria-label="Legal information" className="mt-3 flex justify-center gap-5">
-            <Link href="/services" className="hover:text-foreground">Serviços</Link>
+            <Link href="/services" className="hover:text-foreground">Services</Link>
             <Link href="/terms" className="hover:text-foreground">Terms of Use</Link>
             <Link href="/privacy" className="hover:text-foreground">Privacy Policy</Link>
           </nav>

@@ -38,6 +38,19 @@ Se `yt-dlp` ou FFmpeg estiver instalado fora do `PATH`, configure `YT_DLP_PATH`
 ou `FFMPEG_LOCATION` em `.env`. O frontend usa `PORT` e encaminha os pedidos
 para `/api` para a API, que usa `API_PORT` (3101 por predefinição).
 
+## Pagamentos Premium
+
+O plano Premium custa 100 MT. No painel de administração, preencha os dados
+das contas e instruções de pagamento para e-Mola/dinheiro móvel, banco e
+PayPal. Os utilizadores autenticados veem as instruções no perfil, pagam fora
+da plataforma e enviam a referência da transação para revisão.
+
+Os pedidos ficam guardados no painel e uma notificação por email é enviada
+para `PREMIUM_NOTIFICATION_EMAIL` (ou para `ADMIN_EMAIL` se a primeira não
+estiver definida). A aprovação manual pelo administrador ativa o plano
+Premium; confirme o pagamento antes de aprovar. Configure o endereço de
+notificação e Mailgun no serviço de produção para receber estes emails.
+
 ## Email, recuperação de palavra-passe e verificação
 
 Os links de verificação e de reposição de palavra-passe são enviados pelo
@@ -117,6 +130,7 @@ configura o envio por API HTTPS do Mailgun.
    MAILGUN_DOMAIN=<dominio-de-envio-verificado>
    MAILGUN_API_BASE_URL=https://api.mailgun.net
    EMAIL_FROM=VidGrab <no-reply@<dominio-de-envio-verificado>>
+   PREMIUM_NOTIFICATION_EMAIL=<endereco-do-administrador>
    PUBLIC_APP_URL=https://<nome-do-servico>.onrender.com
    ```
 
@@ -134,8 +148,8 @@ configura o envio por API HTTPS do Mailgun.
    administrador no arranque, adicione também `ADMIN_EMAIL` e
    `ADMIN_PASSWORD` (mínimo de 12 caracteres) e, opcionalmente, `ADMIN_NAME`.
    Depois de a conta ser criada, remova `ADMIN_EMAIL` e `ADMIN_PASSWORD` das
-   variáveis do Render; se já existir uma conta com esse email, o arranque
-   volta a promovê-la a administradora.
+variáveis do Render. Defina `PREMIUM_NOTIFICATION_EMAIL` separadamente para
+continuar a receber pedidos de pagamento por email.
 6. **Publique e verifique a aplicação.** Guarde as variáveis e inicie ou
    volte a publicar o serviço. Abra
    `https://<nome-do-servico>.onrender.com/api/health`; uma resposta saudável

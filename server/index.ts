@@ -21,7 +21,7 @@ import {
 } from "./auth.js";
 import { initializeDatabase, pool as database } from "./db.js";
 import { downloadVideo, DownloaderError, fetchVideoInfo } from "./downloader.js";
-import { sendAccountLink } from "./mail.js";
+import { sendAccountLink, sendPremiumPaymentNotification } from "./mail.js";
 
 const app = express();
 const freeDailyLimit = 10;
@@ -64,6 +64,11 @@ const accountTokenLimit = createRateLimit(
   10,
   60 * 60 * 1000,
   "Too many verification or password-reset attempts. Try again later.",
+);
+const premiumPaymentRequestLimit = createRateLimit(
+  3,
+  60 * 60 * 1000,
+  "Too many premium payment requests. Try again in an hour.",
 );
 const videoAnalysisLimit = createRateLimit(
   20,
@@ -134,6 +139,30 @@ const createDownloadSchema = z.object({
     mediaType: z.enum(["video", "audio"]),
   }),
 });
+const createPremiumPaymentRequestSchema = z.object({
+  data: z.object({
+    paymentMethod: z.enum(["mobile_money", "bank", "paypal"]),
+    transactionReference: z.string().trim().min(2).max(200),
+    notes: z.string().trim().max(1000).default(""),
+  }),
+});
+const updatePremiumPaymentSettingsSchema = z.object({
+  data: z.object({
+    mobileMoneyDetails: z.string().trim().max(1000),
+    bankDetails: z.string().trim().max(1000),
+    paypalDetails: z.string().trim().max(1000),
+  }),
+});
+const reviewPremiumPaymentRequestSchema = z.object({
+  data: z.object({
+    status: z.enum(["approved", "rejected"]),
+  }),
+});
+
+function isUniqueViolation(error: unknown) {
+  return typeof error === "object" && error !== null &&
+    "code" in error && error.code === "23505";
+}
 
 function isYouTubeUrl(value: string) {
   try {
@@ -406,6 +435,106 @@ app.post("/api/auth/logout", requireAuth, async (req, res, next) => {
 app.get("/api/auth/me", requireAuth, (req, res) => {
   res.json(req.user);
 });
+
+app.get("/api/premium/payment-settings", requireAuth, async (_req, res, next) => {
+  try {
+    const result = await database.query<{
+      mobile_money_details: string;
+      bank_details: string;
+      paypal_details: string;
+    }>(
+      `SELECT mobile_money_details, bank_details, paypal_details
+       FROM premium_payment_settings WHERE id = 1`,
+    );
+    const settings = result.rows[0];
+    if (!settings) {
+      res.status(503).json({ error: "Premium payment details are not available." });
+      return;
+    }
+    res.json({
+      mobileMoneyDetails: settings.mobile_money_details,
+      bankDetails: settings.bank_details,
+      paypalDetails: settings.paypal_details,
+      amountMzn: 100,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/premium/payment-requests", requireAuth, async (req, res, next) => {
+  try {
+    const result = await database.query(
+      `SELECT id, payment_method AS "paymentMethod",
+          transaction_reference AS "transactionReference", notes,
+          amount_mzn AS "amountMzn", status,
+          created_at AS "createdAt", reviewed_at AS "reviewedAt"
+       FROM premium_payment_requests
+       WHERE user_id = $1
+       ORDER BY created_at DESC
+       LIMIT 20`,
+      [req.user!.id],
+    );
+    res.json(result.rows);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post(
+  "/api/premium/payment-requests",
+  requireAuth,
+  premiumPaymentRequestLimit,
+  async (req, res, next) => {
+    const parsed = createPremiumPaymentRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      invalidInput(res, parsed.error);
+      return;
+    }
+    if (req.user!.plan === "premium") {
+      res.status(409).json({ error: "Your account already has Premium access." });
+      return;
+    }
+
+    const { paymentMethod, transactionReference, notes } = parsed.data.data;
+    const id = randomUUID();
+    try {
+      await database.query(
+        `INSERT INTO premium_payment_requests
+          (id, user_id, payment_method, transaction_reference, notes, amount_mzn)
+         VALUES ($1, $2, $3, $4, $5, 100)`,
+        [id, req.user!.id, paymentMethod, transactionReference, notes],
+      );
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        res.status(409).json({ error: "You already have a payment request awaiting review." });
+        return;
+      }
+      next(error);
+      return;
+    }
+
+    let emailNotificationSent = false;
+    try {
+      emailNotificationSent = await sendPremiumPaymentNotification({
+        userName: req.user!.name,
+        userEmail: req.user!.email,
+        paymentMethod,
+        transactionReference,
+        notes,
+      });
+    } catch (error) {
+      console.error(`Could not email the administrator about premium request ${id}:`, error);
+    }
+
+    res.status(201).json({
+      id,
+      status: "pending",
+      emailNotificationSent,
+      message: "Your payment confirmation was submitted and is awaiting administrator review.",
+    });
+  },
+);
 
 app.delete("/api/auth/account", requireAuth, async (req, res, next) => {
   const parsed = deleteAccountSchema.safeParse(req.body);
@@ -833,6 +962,152 @@ async function cleanupExpiredDownloadFiles() {
     }
   }
 }
+
+app.get("/api/admin/premium-payment-settings", requireAuth, requireAdmin, async (_req, res, next) => {
+  try {
+    const result = await database.query<{
+      mobile_money_details: string;
+      bank_details: string;
+      paypal_details: string;
+    }>(
+      `SELECT mobile_money_details, bank_details, paypal_details
+       FROM premium_payment_settings WHERE id = 1`,
+    );
+    const settings = result.rows[0];
+    if (!settings) {
+      res.status(503).json({ error: "Premium payment settings are not available." });
+      return;
+    }
+    res.json({
+      mobileMoneyDetails: settings.mobile_money_details,
+      bankDetails: settings.bank_details,
+      paypalDetails: settings.paypal_details,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.put("/api/admin/premium-payment-settings", requireAuth, requireAdmin, async (req, res, next) => {
+  const parsed = updatePremiumPaymentSettingsSchema.safeParse(req.body);
+  if (!parsed.success) {
+    invalidInput(res, parsed.error);
+    return;
+  }
+
+  const { mobileMoneyDetails, bankDetails, paypalDetails } = parsed.data.data;
+  try {
+    const result = await database.query(
+      `UPDATE premium_payment_settings
+       SET mobile_money_details = $1, bank_details = $2, paypal_details = $3,
+           updated_at = now()
+       WHERE id = 1`,
+      [mobileMoneyDetails, bankDetails, paypalDetails],
+    );
+    if (result.rowCount === 0) {
+      res.status(503).json({ error: "Premium payment settings are not available." });
+      return;
+    }
+    res.json({ message: "Payment details updated." });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/admin/premium-payment-requests", requireAuth, requireAdmin, async (_req, res, next) => {
+  try {
+    const result = await database.query(
+      `SELECT requests.id, requests.payment_method AS "paymentMethod",
+          requests.transaction_reference AS "transactionReference", requests.notes,
+          requests.amount_mzn AS "amountMzn", requests.status,
+          requests.created_at AS "createdAt", users.name AS "userName",
+          users.email AS "userEmail"
+       FROM premium_payment_requests AS requests
+       JOIN users ON users.id = requests.user_id
+       ORDER BY (requests.status = 'pending') DESC, requests.created_at DESC
+       LIMIT 100`,
+    );
+    res.json(result.rows);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.patch(
+  "/api/admin/premium-payment-requests/:id",
+  requireAuth,
+  requireAdmin,
+  async (req, res, next) => {
+    const parsed = reviewPremiumPaymentRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      invalidInput(res, parsed.error);
+      return;
+    }
+    const requestId = z.string().uuid().safeParse(req.params.id);
+    if (!requestId.success) {
+      res.status(400).json({ error: "Invalid premium payment request ID." });
+      return;
+    }
+
+    const client = await database.connect();
+    let transactionOpen = false;
+    try {
+      await client.query("BEGIN");
+      transactionOpen = true;
+      const request = await client.query<{ id: string; user_id: string; status: string }>(
+        `SELECT id, user_id, status
+         FROM premium_payment_requests WHERE id = $1 FOR UPDATE`,
+        [requestId.data],
+      );
+      const paymentRequest = request.rows[0];
+      if (!paymentRequest) {
+        await client.query("ROLLBACK");
+        transactionOpen = false;
+        res.status(404).json({ error: "Premium payment request not found." });
+        return;
+      }
+      if (paymentRequest.status !== "pending") {
+        await client.query("ROLLBACK");
+        transactionOpen = false;
+        res.status(409).json({ error: "This premium payment request has already been reviewed." });
+        return;
+      }
+
+      if (parsed.data.data.status === "approved") {
+        await client.query(
+          "UPDATE users SET plan = 'premium', updated_at = now() WHERE id = $1",
+          [paymentRequest.user_id],
+        );
+      }
+      await client.query(
+        `UPDATE premium_payment_requests
+         SET status = $2, reviewed_at = now(), reviewed_by = $3
+         WHERE id = $1`,
+        [paymentRequest.id, parsed.data.data.status, req.user!.id],
+      );
+      await client.query("COMMIT");
+      transactionOpen = false;
+      res.json({
+        id: paymentRequest.id,
+        status: parsed.data.data.status,
+        message: parsed.data.data.status === "approved"
+          ? "Payment approved and Premium access granted."
+          : "Payment request rejected.",
+      });
+    } catch (error) {
+      if (transactionOpen) {
+        try {
+          await client.query("ROLLBACK");
+        } catch (rollbackError) {
+          console.error("Could not roll back premium payment review:", rollbackError);
+        }
+      }
+      next(error);
+    } finally {
+      client.release();
+    }
+  },
+);
 
 app.get("/api/admin/stats", requireAuth, requireAdmin, async (_req, res, next) => {
   try {

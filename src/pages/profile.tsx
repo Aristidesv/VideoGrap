@@ -10,7 +10,20 @@ import {
   useDeleteAccount,
   useGetMe,
   getGetMeQueryKey,
+  useGetPremiumPaymentSettings,
+  useGetPremiumPaymentRequests,
+  useSubmitPremiumPaymentRequest,
+  getGetPremiumPaymentRequestsQueryKey,
+  type PremiumPaymentMethod,
 } from "@/lib/api-client-react";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   AlertDialog,
   AlertDialogContent,
@@ -32,7 +45,13 @@ export default function Profile() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState<PremiumPaymentMethod>("mobile_money");
+  const [transactionReference, setTransactionReference] = useState("");
+  const [paymentNotes, setPaymentNotes] = useState("");
   const { data: user, isLoading } = useGetMe({ query: { retry: false, queryKey: getGetMeQueryKey() } });
+  const paymentSettings = useGetPremiumPaymentSettings();
+  const paymentRequests = useGetPremiumPaymentRequests();
+  const submitPaymentRequest = useSubmitPremiumPaymentRequest();
 
   useEffect(() => {
     if (!isLoading && !user) setLocation("/login");
@@ -51,6 +70,41 @@ export default function Profile() {
 
   const isPremium = user.plan === "premium";
   const downloadsLeft = Math.max(0, FREE_DAILY_LIMIT - user.downloadsToday);
+  const pendingPayment = paymentRequests.data?.find((request) => request.status === "pending");
+  const paymentDetails = paymentMethod === "mobile_money"
+    ? paymentSettings.data?.mobileMoneyDetails
+    : paymentMethod === "bank"
+      ? paymentSettings.data?.bankDetails
+      : paymentSettings.data?.paypalDetails;
+  const submitPaymentConfirmation = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    submitPaymentRequest.mutate({
+      data: {
+        paymentMethod,
+        transactionReference,
+        notes: paymentNotes,
+      },
+    }, {
+      onSuccess: (result) => {
+        queryClient.invalidateQueries({ queryKey: getGetPremiumPaymentRequestsQueryKey() });
+        setTransactionReference("");
+        setPaymentNotes("");
+        toast({
+          title: "Payment confirmation submitted",
+          description: result.emailNotificationSent
+            ? "Your request is awaiting review. The administrator was notified by email."
+            : "Your request is saved and awaiting review. The administrator email notification could not be sent.",
+        });
+      },
+      onError: (error) => {
+        toast({
+          title: "Could not submit payment confirmation",
+          description: error.data?.error || "Please try again.",
+          variant: "destructive",
+        });
+      },
+    });
+  };
 
   const confirmDeleteAccount = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -134,28 +188,142 @@ export default function Profile() {
       </Card>
 
       {!isPremium && (
-        <Card className="border-primary/40 bg-gradient-to-br from-primary/10 to-primary/5 backdrop-blur shadow-lg">
-          <CardContent className="p-8 space-y-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-amber-500/20 rounded-xl">
-                <Crown className="h-6 w-6 text-amber-500" />
+        <>
+          <Card className="border-primary/40 bg-gradient-to-br from-primary/10 to-primary/5 backdrop-blur shadow-lg">
+            <CardContent className="p-8 space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-amber-500/20 rounded-xl">
+                  <Crown className="h-6 w-6 text-amber-500" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-lg">Upgrade to Premium — 100 MT</h3>
+                  <p className="text-sm text-muted-foreground">Pay outside VidGrab, then submit your transaction reference for approval.</p>
+                </div>
               </div>
-              <div>
-                <h3 className="font-bold text-lg">Upgrade to Premium</h3>
-                <p className="text-sm text-muted-foreground">No ads, no limits, maximum speed</p>
-              </div>
-            </div>
-            <ul className="space-y-2 text-sm text-muted-foreground">
-              <li className="flex items-center gap-2"><span className="text-green-500 font-bold">+</span> Unlimited daily downloads</li>
-              <li className="flex items-center gap-2"><span className="text-green-500 font-bold">+</span> No advertisements</li>
-              <li className="flex items-center gap-2"><span className="text-green-500 font-bold">+</span> Priority processing speed</li>
-            </ul>
-            <Button className="w-full h-11 bg-amber-500 hover:bg-amber-600 text-white font-semibold" data-testid="button-upgrade">
-              <Crown className="h-4 w-4 mr-2" />
-              Upgrade to Premium
-            </Button>
-          </CardContent>
-        </Card>
+              <ul className="space-y-2 text-sm text-muted-foreground">
+                <li className="flex items-center gap-2"><span className="text-green-500 font-bold">+</span> Unlimited daily downloads</li>
+                <li className="flex items-center gap-2"><span className="text-green-500 font-bold">+</span> No advertisements</li>
+                <li className="flex items-center gap-2"><span className="text-green-500 font-bold">+</span> Priority processing speed</li>
+              </ul>
+            </CardContent>
+          </Card>
+
+          <Card className="border-border/50 bg-card/80 backdrop-blur">
+            <CardHeader className="pb-2">
+              <h3 className="font-bold text-lg">Payment details</h3>
+              <p className="text-sm text-muted-foreground">
+                Send 100 MT using one of the available methods, then enter the payment transaction reference below.
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              {paymentSettings.isLoading ? (
+                <Skeleton className="h-20 w-full rounded-lg" />
+              ) : paymentSettings.isError ? (
+                <p role="alert" className="text-sm text-destructive">
+                  Payment details could not be loaded. Please refresh and try again.
+                </p>
+              ) : (
+                <>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium" htmlFor="premium-payment-method">Payment method</label>
+                    <Select
+                      value={paymentMethod}
+                      onValueChange={(value) => {
+                        if (value === "mobile_money" || value === "bank" || value === "paypal") {
+                          setPaymentMethod(value);
+                        }
+                      }}
+                    >
+                      <SelectTrigger id="premium-payment-method">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="mobile_money">e-Mola / mobile money</SelectItem>
+                        <SelectItem value="bank">Bank transfer</SelectItem>
+                        <SelectItem value="paypal">PayPal</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="rounded-lg bg-muted/50 p-4">
+                    <p className="mb-2 text-sm font-semibold">Where to pay</p>
+                    {paymentDetails?.trim() ? (
+                      <p className="whitespace-pre-wrap break-words text-sm text-muted-foreground">{paymentDetails}</p>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">
+                        These payment details have not been configured yet. Please check back later.
+                      </p>
+                    )}
+                  </div>
+                  {!pendingPayment && (
+                    <form onSubmit={submitPaymentConfirmation} className="space-y-4">
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium" htmlFor="premium-transaction-reference">
+                          Transaction reference / payment ID
+                        </label>
+                        <Input
+                          id="premium-transaction-reference"
+                          required
+                          minLength={2}
+                          maxLength={200}
+                          value={transactionReference}
+                          onChange={(event) => setTransactionReference(event.target.value)}
+                          placeholder="Enter the reference shown by your payment provider"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium" htmlFor="premium-payment-notes">
+                          Additional details (optional)
+                        </label>
+                        <Textarea
+                          id="premium-payment-notes"
+                          maxLength={1000}
+                          value={paymentNotes}
+                          onChange={(event) => setPaymentNotes(event.target.value)}
+                          placeholder="Name or phone number used for the payment"
+                        />
+                      </div>
+                      <Button
+                        type="submit"
+                        className="w-full h-11 bg-amber-500 hover:bg-amber-600 text-white font-semibold"
+                        disabled={submitPaymentRequest.isPending || !paymentDetails?.trim()}
+                        data-testid="button-upgrade"
+                      >
+                        <Crown className="h-4 w-4 mr-2" />
+                        {submitPaymentRequest.isPending ? "Submitting..." : "Submit payment confirmation"}
+                      </Button>
+                    </form>
+                  )}
+                </>
+              )}
+              {paymentRequests.isError && (
+                <p role="alert" className="text-sm text-destructive">
+                  Your payment request status could not be loaded.
+                </p>
+              )}
+              {paymentRequests.data && paymentRequests.data.length > 0 && (
+                <div className="space-y-2 border-t border-border pt-4">
+                  <p className="text-sm font-semibold">Payment request history</p>
+                  {paymentRequests.data.map((request) => (
+                    <div key={request.id} className="flex items-center justify-between gap-3 text-sm">
+                      <span className="text-muted-foreground">
+                        {request.transactionReference} · {new Date(request.createdAt).toLocaleDateString()}
+                      </span>
+                      <Badge variant={
+                        request.status === "approved"
+                          ? "default"
+                          : request.status === "rejected"
+                            ? "destructive"
+                            : "secondary"
+                      }>
+                        {request.status === "pending" ? "awaiting review" : request.status}
+                      </Badge>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </>
       )}
 
       <Card className="border-destructive/40 bg-card/80">

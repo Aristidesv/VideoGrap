@@ -20,6 +20,28 @@ export interface User {
   emailVerified: boolean;
 }
 
+export type PremiumPaymentMethod = "mobile_money" | "bank" | "paypal";
+export type PremiumPaymentStatus = "pending" | "approved" | "rejected";
+
+export interface PremiumPaymentSettings {
+  mobileMoneyDetails: string;
+  bankDetails: string;
+  paypalDetails: string;
+}
+
+export interface PremiumPaymentRequest {
+  id: string;
+  paymentMethod: PremiumPaymentMethod;
+  transactionReference: string;
+  notes: string;
+  amountMzn: number;
+  status: PremiumPaymentStatus;
+  createdAt: string;
+  reviewedAt?: string | null;
+  userName?: string;
+  userEmail?: string;
+}
+
 export interface VideoInfo {
   url: string;
   title: string;
@@ -131,12 +153,101 @@ export const getGetAdminStatsQueryKey = () => ["/api/admin/stats"] as const;
 export const getGetTopVideosQueryKey = () => ["/api/admin/top-videos"] as const;
 export const getGetRecentDownloadsQueryKey = () =>
   ["/api/admin/recent-downloads"] as const;
+export const getGetPremiumPaymentSettingsQueryKey = () =>
+  ["/api/premium/payment-settings"] as const;
+export const getGetPremiumPaymentRequestsQueryKey = () =>
+  ["/api/premium/payment-requests"] as const;
+export const getGetAdminPremiumPaymentSettingsQueryKey = () =>
+  ["/api/admin/premium-payment-settings"] as const;
+export const getGetAdminPremiumPaymentRequestsQueryKey = () =>
+  ["/api/admin/premium-payment-requests"] as const;
 
 export function useGetMe(options?: QueryOptions<User>) {
   return useQuery({
     ...options?.query,
     queryKey: options?.query?.queryKey ?? getGetMeQueryKey(),
     queryFn: () => request<User>("/api/auth/me"),
+  });
+}
+
+export function useGetPremiumPaymentSettings() {
+  return useQuery({
+    queryKey: getGetPremiumPaymentSettingsQueryKey(),
+    queryFn: () => request<PremiumPaymentSettings & { amountMzn: number }>(
+      "/api/premium/payment-settings",
+    ),
+  });
+}
+
+export function useGetPremiumPaymentRequests() {
+  return useQuery({
+    queryKey: getGetPremiumPaymentRequestsQueryKey(),
+    queryFn: () => request<PremiumPaymentRequest[]>("/api/premium/payment-requests"),
+  });
+}
+
+export function useSubmitPremiumPaymentRequest() {
+  return useMutation<
+    { id: string; status: PremiumPaymentStatus; emailNotificationSent: boolean; message: string },
+    ApiError,
+    { data: {
+      paymentMethod: PremiumPaymentMethod;
+      transactionReference: string;
+      notes: string;
+    } }
+  >({
+    mutationFn: ({ data }) =>
+      post<typeof data, {
+        id: string;
+        status: PremiumPaymentStatus;
+        emailNotificationSent: boolean;
+        message: string;
+      }>("/api/premium/payment-requests")(data),
+  });
+}
+
+export function useGetAdminPremiumPaymentSettings(options?: QueryOptions<PremiumPaymentSettings>) {
+  return useQuery({
+    ...options?.query,
+    queryKey: options?.query?.queryKey ?? getGetAdminPremiumPaymentSettingsQueryKey(),
+    queryFn: () => request<PremiumPaymentSettings>("/api/admin/premium-payment-settings"),
+  });
+}
+
+export function useUpdateAdminPremiumPaymentSettings() {
+  return useMutation<
+    { message: string },
+    ApiError,
+    { data: PremiumPaymentSettings }
+  >({
+    mutationFn: ({ data }) =>
+      request<{ message: string }>("/api/admin/premium-payment-settings", {
+        method: "PUT",
+        body: JSON.stringify({ data }),
+      }),
+  });
+}
+
+export function useGetAdminPremiumPaymentRequests(options?: QueryOptions<PremiumPaymentRequest[]>) {
+  return useQuery({
+    ...options?.query,
+    queryKey: options?.query?.queryKey ?? getGetAdminPremiumPaymentRequestsQueryKey(),
+    queryFn: () =>
+      request<PremiumPaymentRequest[]>("/api/admin/premium-payment-requests"),
+  });
+}
+
+export function useReviewAdminPremiumPaymentRequest() {
+  return useMutation<
+    { id: string; status: PremiumPaymentStatus; message: string },
+    ApiError,
+    { id: string; data: { status: "approved" | "rejected" } }
+  >({
+    mutationFn: ({ id, data }) =>
+      request<{ id: string; status: PremiumPaymentStatus; message: string }>(
+        `/api/admin/premium-payment-requests/${encodeURIComponent(id)}`,
+        { method: "PATCH", body: JSON.stringify({ data }) },
+      ),
   });
 }
 

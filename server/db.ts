@@ -39,6 +39,7 @@ export async function initializeDatabase() {
       { version: "001_initial", file: "schema.sql" },
       { version: "002_account_security", file: "002_account_security.sql" },
       { version: "003_analysis_history_and_temporary_downloads", file: "003_analysis_history_and_temporary_downloads.sql" },
+      { version: "004_premium_payments", file: "004_premium_payments.sql" },
     ];
 
     for (const migration of migrations) {
